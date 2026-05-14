@@ -149,26 +149,41 @@ async def got_contracts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def got_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    if uid not in user_trades:
+        await update.message.reply_text("⚠️ Session expired. Please start again with /open")
+        return ConversationHandler.END
     user_trades[uid]["notes"] = update.message.text.strip()
-    return await _save_open_trade(update, uid)
+    return await _save_open_trade(update, ctx)
 
 async def skip_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    if uid not in user_trades:
+        await update.message.reply_text("⚠️ Session expired. Please start again with /open")
+        return ConversationHandler.END
     user_trades[uid]["notes"] = ""
-    return await _save_open_trade(update, uid)
+    return await _save_open_trade(update, ctx)
 
-async def _save_open_trade(update: Update, uid: int):
-    trade = user_trades[uid]
+async def _save_open_trade(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    trade = user_trades.get(uid)
+    if not trade:
+        await update.message.reply_text("⚠️ Session expired. Please start again with /open")
+        return ConversationHandler.END
     trade["timestamp"] = datetime.now().strftime("%d %b %Y %H:%M MYT")
     msg = fmt_trade_message(trade, "OPEN")
-    sent = await update.message.reply_text(msg, parse_mode="Markdown")
-    # Store message_id so we can reference it on close
-    user_trades[uid]["open_msg_id"] = sent.message_id
-    await update.message.reply_text(
-        f"✅ Trade `#{trade['id']}` logged!\n\nPin this message to track it, "
-        f"or use Telegram search with `#{trade['ticker'].lower()}` to find it later.",
-        parse_mode="Markdown"
-    )
+    try:
+        sent = await update.message.reply_text(msg, parse_mode="Markdown")
+        user_trades[uid]["open_msg_id"] = sent.message_id
+        await update.message.reply_text(
+            f"✅ Trade `#{trade['id']}` logged!\n\nPin this message to track it, "
+            f"or use Telegram search with `#{trade['ticker'].lower()}` to find it later.",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Error saving trade: {e}")
+        await update.message.reply_text(f"⚠️ Error saving trade: {e}")
+    finally:
+        user_trades.pop(uid, None)
     return ConversationHandler.END
 
 
